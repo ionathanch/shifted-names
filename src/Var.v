@@ -1,4 +1,4 @@
-Require Import String Omega Morph.
+Require Import String Omega Program Morph Vectors.Fin.
 
 (* Name indices are [nat]s *)
 Definition index := nat.
@@ -426,38 +426,28 @@ Proof.
     rewrite <- HeqHdec; easy.
 Qed.
 
-(* Bound variables are represented by a level *)
-
-Definition Zero := Empty_set.
-
-Inductive Succ {S : Set} : Set := l0 | lS (s : S).
-
-Fixpoint level (V : nat) : Set :=
-  match V with
-  | 0 => Zero
-  | S V => @Succ (level V)
-  end.
-Arguments level !V.
-
 (* Variables are either free names or bound levels *)
 
 Inductive var {V : nat} :=
 | free (name : name)
-| bound (l : level V).
+| bound (l : Fin.t V).
 
 (* The core operations acting on variables *)
 
 Definition wkv {V} (v : @var V) : @var (S V) :=
   match v with
   | free n => free n
-  | bound l => @bound (S V) (lS l)
+  | bound l => bound (FS l)
   end.
 
 Definition openv a {V} (v : @var (S V)) : @var V :=
   match v with
   | free n => free (shift_name a n)
-  | bound l0 => free a
-  | bound (lS l) => @bound V l
+  | bound l =>
+    match l in Fin.t (S V) with
+    | F1 => free a
+    | FS l => bound l
+    end
   end.
 
 Definition closev a {V} (v : @var V) : @var (S V) :=
@@ -465,16 +455,19 @@ Definition closev a {V} (v : @var V) : @var (S V) :=
   | free n =>
     match inverse_shift_name a n with
     | Some n' => free n'
-    | None => @bound (S V) l0
+    | None => bound F1
     end
-  | bound l => @bound (S V) (lS l)
+  | bound l => bound (FS l)
   end.
 
 Definition bindv {V} (v : @var (S V)) : option (@var V) :=
   match v with
   | free n => Some (free n)
-  | bound l0 => None
-  | bound (lS l) => Some (@bound V l)
+  | bound l =>
+    match l in Fin.t (S V) with
+    | F1 => None
+    | FS l => Some (bound l)
+    end
   end.
 
 (* We don't want to reduce the operations if it just exposes
@@ -494,8 +487,7 @@ Proof.
 Qed.
 
 Lemma rw_closev_same a :
-  forall {V}, @closev a V (free a) =
-    @bound (S V) (@l0 (level V)).
+  forall {V}, @closev a V (free a) = bound F1.
 Proof.
   unfold closev; autorewrite with rw_names; easy.
 Qed.
@@ -515,8 +507,9 @@ Qed.
 Lemma rw_closev_openv a {V} (v : @var (S V)) :
   closev a (openv a v) = v.
 Proof.
-  destruct v as [n|[|l]]; cbn;
-    autorewrite with rw_vars; easy.
+  destruct v.
+  - cbn; autorewrite with rw_vars; easy.
+  - dependent destruction l; cbn; autorewrite with rw_vars; easy.
 Qed.
 
 Lemma rw_bindv_wkv {V} (v : @var V) :
@@ -803,17 +796,18 @@ Qed.
 (* Comparison with [bound l0] *)
 
 Inductive l0_comparison {V} : @var (S V) -> Set :=
-| samel0 : l0_comparison (@bound (S V) (@l0 (level V)))
+| samel0 : l0_comparison (@bound (S V) F1)
 | diffl0 v : l0_comparison (wkv v).
 
 Definition compare_l0 {V} (v : @var (S V)) : l0_comparison v.
 Proof.
-  destruct v as [a|[|l]].
-  - change (@free (S V) a)
-      with (@wkv V (free a)); constructor.
-  - constructor.
-  - change (@bound (S V) (lS l))
-      with (@wkv V (bound l)); constructor.
+  destruct v.
+  - change (@free (S V) name0)
+      with (@wkv V (free name0)); constructor.
+  - dependent destruction l.
+    + constructor.
+    + change (bound (FS l))
+        with (@wkv V (bound l)); constructor.
 Qed.
 
 (* A couple of useful commuting lemmas *)
@@ -844,16 +838,22 @@ Proof.
     rewrite swap_shiftv_wkv; easy.
 Qed.
 
+Definition swap_level {V} (l : @Fin.t V) :=
+  match l in @Fin.t V return
+    (match V with
+    | O | S O => unit
+    | _ => @Fin.t V end) with
+  | @F1 0 => tt
+  | @F1 (S V) => FS F1
+  | @FS 0 _ => tt
+  | @FS (S V) F1 => F1
+  | @FS (S V) v => @FS (S V) v
+  end.
+
 Definition swap_bound {V} (v : @var (S (S V))) : @var (S (S V)) :=
   match v with
   | free a => free a
-  | bound l =>
-    @bound (S (S V))
-    (match l with
-     | l0 => lS l0
-     | lS l0 => l0
-     | lS (lS v) => lS (lS v)
-     end)
+  | bound l => bound (swap_level l)
   end.
 
 Lemma swap_close_close {x y}
@@ -929,7 +929,7 @@ Fixpoint applyt {trm : Set} (r : @renaming trm) :
 Arguments applyt {trm} !r rn {V} t /.
 
 Lemma rw_applyt_bound trm (r : @renaming trm) rn :
-  forall {V} (v : level V),
+  forall {V} (v : Fin.t V),
     applyt r rn (bound v) = bound v.
 Proof.
   induction r; try destruct rn; cbn; intros; auto;

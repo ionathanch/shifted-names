@@ -1,4 +1,4 @@
-Require Import String Morph Var Context.
+Require Import String Program Morph Var Context.
 Require Setoid Morphisms.
 
 Module Type Term.
@@ -234,7 +234,7 @@ Module Renamings (T : Term).
   Hint Rewrite @rw_apply_id @rw_apply_comp : rw_renaming.
 
   (* Simple rewritings on applyv and shiftv (more later) *)
-  Lemma rw_applyv_bound r : forall {V} (v : level V),
+  Lemma rw_applyv_bound r : forall {V} (v : Fin.t V),
     @applyv r V (bound v) = @unit 0 V (bound v).
   Proof.
     intros.
@@ -643,8 +643,11 @@ Module Renamings (T : Term).
   Proof.
     intros V p. simpl_term_eq.
     rewrite (swap_close_close Hd).
-    destruct (closev y (closev x _)) as [?|[|[|?]]];
-      names; simpl_term_eq.
+    destruct (closev y (closev x _)); names.
+    - simpl_term_eq.
+    - dependent destruction l.
+      + simpl_term_eq.
+      + dependent destruction l; simpl_term_eq.
   Qed.
 
 End Renamings.
